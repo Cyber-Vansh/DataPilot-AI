@@ -33,6 +33,7 @@ services:
       - "${AI_SERVICE_PORT}:${AI_SERVICE_PORT}"
     volumes:
       - ./ai-service:/app
+      - ./backend/uploads:/app/uploads
     environment:
       - DATABASE_HOST=mysql
       - DATABASE_USER=${MYSQL_USER}
@@ -51,6 +52,8 @@ services:
     container_name: sql_gen_backend
     ports:
       - "${BACKEND_PORT}:${BACKEND_PORT}"
+    volumes:
+      - ./backend/uploads:/app/uploads
     environment:
       - PORT=${BACKEND_PORT}
       - MONGO_URI=mongodb://mongo:27017/${MONGO_DB_NAME}

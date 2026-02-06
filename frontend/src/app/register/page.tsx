@@ -25,8 +25,12 @@ export default function Register() {
       if (!res.ok) throw new Error(data.error);
 
       login(data.token, data.user);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
     }
   };
 

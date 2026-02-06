@@ -8,6 +8,36 @@ import jwt from 'jsonwebtoken';
 import { ChatSession } from './models/ChatSession';
 import { User } from './models/User';
 import { authMiddleware, AuthRequest } from './middleware/authMiddleware';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { Project, IProject } from './models/Project';
+
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = 'uploads/';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir);
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
+});
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'text/csv' || file.mimetype === 'application/vnd.ms-excel') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV files are allowed'));
+    }
+  }
+});
 
 dotenv.config();
 
@@ -63,10 +93,63 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   }
 });
 
+
+
+
+app.get('/api/projects', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const projects = await Project.find({ userId: req.user.id }).sort({ createdAt: -1 });
+    res.json(projects);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch projects' });
+  }
+});
+
+
+app.post('/api/projects', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const { name, type, dbConfig } = req.body;
+  
+  if (type !== 'mysql') return res.status(400).json({ error: 'Invalid project type' });
+
+  try {
+    const project = new Project({
+      userId: req.user.id,
+      name,
+      type,
+      dbConfig
+    });
+    await project.save();
+    res.json(project);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create project' });
+  }
+});
+
+
+app.post('/api/projects/upload', authMiddleware, upload.single('file'), async (req: AuthRequest, res: Response) => {
+  const { name } = req.body;
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  try {
+    const project = new Project({
+      userId: req.user.id,
+      name,
+      type: 'csv',
+      csvPath: req.file.path
+    });
+    await project.save();
+    res.json(project);
+  } catch (error) {
+    console.error("Upload error:", error);
+    res.status(500).json({ error: 'Failed to upload CSV project' });
+  }
+});
+
 app.get('/api/history', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const sessions = await ChatSession.find({ userId: req.user.id })
-      .select('title createdAt')
+      .select('title createdAt projectId')
+      .populate('projectId', 'name type')
       .sort({ updatedAt: -1 })
       .limit(50);
     res.json(sessions);
@@ -86,31 +169,64 @@ app.get('/api/history/:id', authMiddleware, async (req: AuthRequest, res: Respon
 });
 
 app.post('/api/chat', authMiddleware, async (req: AuthRequest, res: Response) => {
-  const { question, sessionId } = req.body;
+  const { question, sessionId, projectId } = req.body;
 
   if (!question) {
     return res.status(400).json({ error: 'Question is required' });
   }
 
+
+  if (!sessionId && !projectId) {
+    return res.status(400).json({ error: 'Project ID is required for new chats' });
+  }
+
   try {
-    const aiResponse = await axios.post(`${AI_SERVICE_URL}/query`, { question });
+    let project;
+    let session;
+
+
+    if (sessionId) {
+      session = await ChatSession.findOne({ _id: sessionId, userId: req.user.id }).populate('projectId');
+      if (session) {
+
+         project = session.projectId;
+      }
+    } 
+    
+
+    if (!project && projectId) {
+      project = await Project.findOne({ _id: projectId, userId: req.user.id });
+    }
+
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+
+
+    const proj = project as any;
+    
+    const dbConnection = {
+      type: proj.type,
+      config: proj.type === 'mysql' ? proj.dbConfig : { csvPath: proj.csvPath }
+    };
+
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/query`, { 
+      question,
+      db_connection: dbConnection
+    });
     const { sql, data } = aiResponse.data;
 
     const userMessage = { role: 'user', content: question };
     const aiMessage = { role: 'ai', content: data.sql ? "Query executed successfully." : "I couldn't generate a query for that.", sql, result: data };
 
-    let session;
-    if (sessionId) {
-      session = await ChatSession.findOne({ _id: sessionId, userId: req.user.id });
-      if (session) {
-        session.messages.push(userMessage, aiMessage);
-        await session.save();
-      }
-    }
-
-    if (!session) {
+    if (session) {
+      session.messages.push(userMessage, aiMessage);
+      await session.save();
+    } else {
       session = new ChatSession({
         userId: req.user.id,
+        projectId: project._id,
         title: question.substring(0, 50) + (question.length > 50 ? '...' : ''),
         messages: [userMessage, aiMessage]
       });

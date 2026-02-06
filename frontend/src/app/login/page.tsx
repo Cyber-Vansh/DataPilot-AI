@@ -24,8 +24,12 @@ export default function Login() {
       if (!res.ok) throw new Error(data.error);
 
       login(data.token, data.user);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
     }
   };
 
@@ -60,7 +64,7 @@ export default function Login() {
           </button>
         </form>
         <p className="mt-4 text-center text-sm text-zinc-400">
-          Don't have an account? <Link href="/register" className="text-indigo-400 hover:underline">Sign up</Link>
+          Don&apos;t have an account? <Link href="/register" className="text-indigo-400 hover:underline">Sign up</Link>
         </p>
       </div>
     </div>
