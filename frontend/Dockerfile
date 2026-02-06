@@ -1,3 +1,12 @@
-FROM node:18-alpine
+FROM node:20-alpine
+
 WORKDIR /app
-CMD ["echo", "Frontend not ready yet"]
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+EXPOSE 4000
+
+CMD ["npm", "run", "dev", "--", "-p", "4000"]

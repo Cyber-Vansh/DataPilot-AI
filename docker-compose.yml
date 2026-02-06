@@ -67,7 +67,7 @@ services:
       dockerfile: Dockerfile
     container_name: sql_gen_frontend
     ports:
-      - "8080:${FRONTEND_PORT}"
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:${BACKEND_PORT}
     depends_on:

@@ -3,7 +3,7 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import axios from 'axios';
 import dotenv from 'dotenv';
-import { Chat } from './models/Chat';
+import { ChatSession } from './models/ChatSession';
 
 dotenv.config();
 
@@ -25,15 +25,28 @@ app.get('/api/health', (req: Request, res: Response) => {
 
 app.get('/api/history', async (req: Request, res: Response) => {
   try {
-    const history = await Chat.find().sort({ timestamp: -1 }).limit(50);
-    res.json(history);
+    const sessions = await ChatSession.find()
+      .select('title createdAt')
+      .sort({ updatedAt: -1 })
+      .limit(50);
+    res.json(sessions);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch history' });
   }
 });
 
+app.get('/api/history/:id', async (req: Request, res: Response) => {
+  try {
+    const session = await ChatSession.findById(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json(session);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch session' });
+  }
+});
+
 app.post('/api/chat', async (req: Request, res: Response) => {
-  const { question } = req.body;
+  const { question, sessionId } = req.body;
 
   if (!question) {
     return res.status(400).json({ error: 'Question is required' });
@@ -41,18 +54,34 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 
   try {
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/query`, { question });
-    
     const { sql, data } = aiResponse.data;
 
-    const chat = new Chat({
-      question,
-      sql,
-      result: data
+    const userMessage = { role: 'user', content: question };
+    const aiMessage = { role: 'ai', content: data.sql ? "Query executed successfully." : "I couldn't generate a query for that.", sql, result: data };
+
+    let session;
+    if (sessionId) {
+      session = await ChatSession.findById(sessionId);
+      if (session) {
+        session.messages.push(userMessage, aiMessage);
+        await session.save();
+      }
+    }
+
+    if (!session) {
+      session = new ChatSession({
+        title: question.substring(0, 50) + (question.length > 50 ? '...' : ''),
+        messages: [userMessage, aiMessage]
+      });
+      await session.save();
+    }
+
+    res.json({ 
+      sessionId: session._id, 
+      messages: [userMessage, aiMessage],
+      sql, 
+      result: data 
     });
-
-    await chat.save();
-
-    res.json(chat);
   } catch (error) {
     console.error('Error processing query:', error);
     res.status(500).json({ error: 'Failed to process query' });
