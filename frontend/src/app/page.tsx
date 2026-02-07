@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import ProjectModal from '@/components/ProjectModal';
+import ChartRenderer from '@/components/ChartRenderer';
 
 interface ChatMessage {
   id: string;
@@ -365,7 +366,7 @@ export default function Home() {
                     <p className="text-[15px] leading-relaxed">{msg.content}</p>
                   </div>
                 ) : (
-                  <div className="w-full space-y-4">
+                  <div className="w-full space-y-6">
                     
                     <div className="flex items-center gap-3">
                       <div className="w-6 h-6 rounded bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg">
@@ -389,42 +390,46 @@ export default function Home() {
                     )}
 
                     {msg.data && Array.isArray(msg.data) && msg.data.length > 0 && (
-                      <div className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900/50 shadow-sm">
-                         <div className="px-4 py-2 border-b border-zinc-800 bg-zinc-900 flex items-center gap-2 text-xs font-mono text-zinc-500">
-                           <TableIcon className="w-3 h-3" />
-                           RESULTS
-                         </div>
-                         <div className="overflow-x-auto max-h-[400px]">
-                           <table className="w-full text-sm text-left border-collapse">
-                             <thead className="bg-zinc-900/50 sticky top-0 backdrop-blur-sm">
-                               <tr>
-                                 {Array.isArray(msg.data[0]) 
-                                   ? msg.data[0].map((_, i) => <th key={i} className="px-4 py-2 text-xs font-medium text-zinc-500 border-b border-zinc-800">Col {i+1}</th>)
-                                   : Object.keys(msg.data[0] as object).map((key) => (
-                                       <th key={key} className="px-4 py-2 text-xs font-medium text-zinc-500 border-b border-zinc-800 uppercase tracking-wider">{key}</th>
-                                     ))
-                                 }
-                               </tr>
-                             </thead>
-                             <tbody className="divide-y divide-zinc-800/50">
-                               {msg.data.map((row, i) => (
-                                 <tr key={i} className="group hover:bg-zinc-800/30 transition-colors">
-                                   {Array.isArray(row) ? row.map((cell, j) => (
-                                     <td key={j} className="px-4 py-3 text-zinc-300 whitespace-nowrap">
-                                       {String(cell)}
-                                     </td>
-                                   )) : (
-                                      Object.values(row as object).map((cell, j) => (
-                                        <td key={j} className="px-4 py-3 text-zinc-300 whitespace-nowrap">
-                                          {String(cell)}
-                                        </td>
-                                      ))
-                                   )}
+                      <div className="space-y-4">
+                        <ChartRenderer data={msg.data} />
+
+                        <div className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900/50 shadow-sm">
+                           <div className="px-4 py-2 border-b border-zinc-800 bg-zinc-900 flex items-center gap-2 text-xs font-mono text-zinc-500">
+                             <TableIcon className="w-3 h-3" />
+                             RESULTS
+                           </div>
+                           <div className="overflow-auto max-h-[400px] border border-zinc-800 rounded-lg">
+                             <table className="w-full text-sm text-left border-collapse">
+                               <thead className="bg-zinc-900/50 sticky top-0 backdrop-blur-sm">
+                                 <tr>
+                                   {Array.isArray(msg.data[0]) 
+                                     ? msg.data[0].map((_, i) => <th key={i} className="px-4 py-2 text-xs font-medium text-zinc-500 border-b border-zinc-800">Col {i+1}</th>)
+                                     : Object.keys(msg.data[0] as object).map((key) => (
+                                         <th key={key} className="px-4 py-2 text-xs font-medium text-zinc-500 border-b border-zinc-800 uppercase tracking-wider">{key}</th>
+                                       ))
+                                   }
                                  </tr>
-                               ))}
-                             </tbody>
-                           </table>
-                         </div>
+                               </thead>
+                               <tbody className="divide-y divide-zinc-800/50">
+                                 {msg.data.map((row, i) => (
+                                   <tr key={i} className="group hover:bg-zinc-800/30 transition-colors">
+                                     {Array.isArray(row) ? row.map((cell, j) => (
+                                       <td key={j} className="px-4 py-3 text-zinc-300 whitespace-nowrap">
+                                         {String(cell)}
+                                       </td>
+                                     )) : (
+                                        Object.values(row as object).map((cell, j) => (
+                                          <td key={j} className="px-4 py-3 text-zinc-300 whitespace-nowrap">
+                                            {String(cell)}
+                                          </td>
+                                        ))
+                                     )}
+                                   </tr>
+                                 ))}
+                               </tbody>
+                             </table>
+                           </div>
+                        </div>
                       </div>
                     )}
                   </div>
