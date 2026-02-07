@@ -1,5 +1,6 @@
 import os
 import time
+import re
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from langchain_community.utilities import SQLDatabase
@@ -42,8 +43,26 @@ async def process_query(request: QueryRequest):
         engine = None
 
         if request.db_connection.type == 'mysql':
+            from urllib.parse import quote_plus
+
             config = request.db_connection.config
-            db_uri = f"mysql+pymysql://{config.get('user')}:{config.get('password')}@{config.get('host')}:{config.get('port', 3306)}/{config.get('database')}"
+            host = config.get('host', 'localhost')
+            port = int(config.get('port', 3306))
+            user = config.get('user', '')
+            password = config.get('password', '')
+            database = config.get('database', '')
+            
+            if ':' in host:
+                host = host.split(':')[0]
+            
+            if host in ['localhost', '127.0.0.1']:
+                 host = 'host.docker.internal'
+
+            encoded_password = quote_plus(password)
+            
+            db_uri = f"mysql+pymysql://{user}:{encoded_password}@{host}:{port}/{database}"
+            
+
             
             engine = create_engine(db_uri)
             db = SQLDatabase(engine)
@@ -68,14 +87,41 @@ async def process_query(request: QueryRequest):
              raise HTTPException(status_code=400, detail="Invalid database type")
 
 
-        chain = create_sql_query_chain(llm, db, k=1000)
+
+        
+        from langchain_core.prompts import PromptTemplate
+
+        db_name = request.db_connection.config.get('database', 'data') if request.db_connection.type == 'mysql' else 'data'
+
+        system_prompt = f"""You are a MySQL expert. Given an input question, create a syntactically correct MySQL query to run.
+        Unless the user specifies otherwise, obtain the relevant data from the database.
+        
+        Important:
+        - If the user asks for "all table names", you MUST query the `information_schema.tables` table.
+        - Do NOT just list the tables from your context. Write a query to fetch them from the database.
+        - Example: SELECT table_name FROM information_schema.tables WHERE table_schema = '{db_name}';
+        - Never query for all columns from a specific table, only ask for a few relevant columns given the question.
+        - Pay attention to use only the column names you can see in the tables below. Be careful to not query for columns that do not exist.
+        - Also, pay attention to which column is in which table.
+        """
+        
+        prompt = PromptTemplate.from_template(system_prompt + "\n\nOnly use the following tables:\n{table_info}\n\nQuestion: {input}\n\nLimit: {top_k}")
+        
+        chain = create_sql_query_chain(llm, db, k=100, prompt=prompt)
         response = chain.invoke({"question": request.question})
         
         cleaned_sql = response
-        if "SQLQuery:" in response:
-            cleaned_sql = response.split("SQLQuery:")[1]
         
-        cleaned_sql = cleaned_sql.strip().replace("```sql", "").replace("```", "").strip()
+        code_block_pattern = r"```(?:sql|mysql)?\s*(.*?)```"
+        match = re.search(code_block_pattern, cleaned_sql, re.DOTALL | re.IGNORECASE)
+        if match:
+            cleaned_sql = match.group(1)
+        
+
+        if "SQLQuery:" in cleaned_sql:
+            cleaned_sql = cleaned_sql.split("SQLQuery:")[1]
+            
+        cleaned_sql = cleaned_sql.strip()
         
         result_data = []
         with engine.connect() as connection:

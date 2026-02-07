@@ -125,6 +125,37 @@ app.post('/api/projects', authMiddleware, async (req: AuthRequest, res: Response
   }
 });
 
+app.put('/api/projects/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const { name, dbConfig } = req.body;
+  try {
+    const project = await Project.findOne({ _id: req.params.id, userId: req.user.id });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    if (name) project.name = name;
+    if (dbConfig && project.type === 'mysql') {
+       project.dbConfig = { ...project.dbConfig, ...dbConfig };
+    }
+    
+    await project.save();
+    res.json(project);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update project' });
+  }
+});
+
+app.delete('/api/projects/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const project = await Project.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    
+    await ChatSession.deleteMany({ projectId: project._id });
+
+    res.json({ message: 'Project deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete project' });
+  }
+});
+
 
 app.post('/api/projects/upload', authMiddleware, upload.single('file'), async (req: AuthRequest, res: Response) => {
   const { name } = req.body;

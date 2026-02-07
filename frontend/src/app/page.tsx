@@ -3,10 +3,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Send, Database, Table as TableIcon, Code, 
-  Loader2, Terminal, Sparkles, ChevronRight, History, LogOut, Plus 
+  Loader2, Terminal, Sparkles, ChevronRight, History, LogOut, Plus,
+  Pencil, Trash2
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import ProjectModal from '@/components/ProjectModal';
+import ConfirmationModal from '@/components/ConfirmationModal';
 import ChartRenderer from '@/components/ChartRenderer';
 
 interface ChatMessage {
@@ -32,6 +34,11 @@ interface Project {
   _id: string;
   name: string;
   type: 'mysql' | 'csv';
+  dbConfig?: {
+    host: string;
+    user: string;
+    database: string;
+  };
 }
 
 interface BackendMessage {
@@ -49,10 +56,13 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   
-
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -215,17 +225,63 @@ export default function Home() {
     setSessionId(null);
   };
 
-  const handleProjectCreated = () => {
+  const handleProjectSaved = () => {
     fetchProjects();
+    setProjectToEdit(null);
+  };
+
+  const handleEditProject = (project: Project) => {
+    setProjectToEdit(project);
+    setIsProjectModalOpen(true);
+  };
+
+  const handleDeleteProject = (projectId: string) => {
+    setProjectToDelete(projectId);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+      const res = await fetch(`${apiUrl}/api/projects/${projectToDelete}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (res.status === 401) return logout();
+      
+      if (res.ok) {
+        setProjects(prev => prev.filter(p => p._id !== projectToDelete));
+        if (selectedProjectId === projectToDelete) {
+          setSelectedProjectId(null);
+          startNewQuery();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete project:", err);
+    } finally {
+        setIsDeleteModalOpen(false);
+        setProjectToDelete(null);
+    }
   };
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-indigo-500/30">
+      <ConfirmationModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => { setIsDeleteModalOpen(false); setProjectToDelete(null); }}
+        onConfirm={confirmDeleteProject}
+        title="Delete Project?"
+        message="Are you sure you want to delete this project? All associated chats and history will be permanently removed. This action cannot be undone."
+      />
       <ProjectModal 
         isOpen={isProjectModalOpen} 
-        onClose={() => setIsProjectModalOpen(false)}
-        onProjectCreated={handleProjectCreated}
+        onClose={() => { setIsProjectModalOpen(false); setProjectToEdit(null); }}
+        onProjectSaved={handleProjectSaved}
         token={token}
+        projectToEdit={projectToEdit}
       />
       
       <aside className="w-[280px] bg-zinc-900/50 border-r border-zinc-800 hidden md:flex flex-col backdrop-blur-xl">
@@ -253,24 +309,44 @@ export default function Home() {
           <div className="mb-6">
             <div className="flex items-center justify-between text-xs text-zinc-500 font-bold uppercase tracking-wider mb-2">
               <span>Project</span>
-              <button onClick={() => setIsProjectModalOpen(true)} className="hover:text-indigo-400">
+              <button 
+                onClick={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
+                className="hover:text-indigo-400"
+              >
                 <Plus className="w-3 h-3" />
               </button>
             </div>
             <div className="space-y-1">
               {projects.map(p => (
-                <button
-                  key={p._id}
-                  onClick={() => { setSelectedProjectId(p._id); startNewQuery(); }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors truncate flex items-center gap-2 ${selectedProjectId === p._id ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/20' : 'hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
-                >
-                  <Database className="w-3 h-3" />
-                  {p.name}
-                </button>
+                <div key={p._id} className="group relative">
+                  <button
+                    onClick={() => { setSelectedProjectId(p._id); startNewQuery(); }}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors truncate flex items-center gap-2 pr-16 ${selectedProjectId === p._id ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/20' : 'hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200'}`}
+                  >
+                    <Database className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleEditProject(p); }}
+                      className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 rounded-md"
+                      title="Edit Project"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleDeleteProject(p._id); }}
+                      className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-md"
+                      title="Delete Project"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
               ))}
               {projects.length === 0 && (
                 <button 
-                  onClick={() => setIsProjectModalOpen(true)}
+                  onClick={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
                   className="w-full text-left px-3 py-3 rounded-lg border border-dashed border-zinc-700 text-zinc-500 text-xs hover:border-zinc-500 hover:text-zinc-300 transition-colors"
                 >
                   + Create first project
