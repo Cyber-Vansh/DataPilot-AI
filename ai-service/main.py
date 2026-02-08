@@ -110,7 +110,7 @@ async def process_query(request: QueryRequest):
             - Pay attention to use only the column names you can see in the tables below. Be careful to not query for columns that do not exist.
             - Also, pay attention to which column is in which table.
             """
-        else: # csv / sqlite
+        else:
             system_prompt = f"""You are a SQLite expert. Given an input question, create a syntactically correct SQLite query to run.
             Unless the user specifies otherwise, obtain the relevant data from the database.
             
@@ -129,7 +129,7 @@ async def process_query(request: QueryRequest):
         
         cleaned_sql = response
         
-        code_block_pattern = r"```(?:sql|mysql)?\s*(.*?)```"
+        code_block_pattern = r"```(?:sql|mysql|sqlite)?\s*(.*?)```"
         match = re.search(code_block_pattern, cleaned_sql, re.DOTALL | re.IGNORECASE)
         if match:
             cleaned_sql = match.group(1)
