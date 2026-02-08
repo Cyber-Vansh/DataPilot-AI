@@ -183,10 +183,19 @@ app.get('/api/projects/:id/schema', authMiddleware, async (req: AuthRequest, res
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const proj = project as any;
-    const dbConnection = {
+    const dbConnection: any = {
       type: proj.type,
       config: proj.type === 'mysql' ? proj.dbConfig : { csvPath: proj.csvPath }
     };
+
+    if (proj.type === 'csv' && proj.csvPath) {
+      try {
+        const fileContent = fs.readFileSync(proj.csvPath, 'utf8');
+        dbConnection.config.csvContent = fileContent;
+      } catch (err) {
+        console.error("Error reading CSV file:", err);
+      }
+    }
 
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/schema`, { 
       db_connection: dbConnection
@@ -260,10 +269,19 @@ app.post('/api/chat', authMiddleware, async (req: AuthRequest, res: Response) =>
 
     const proj = project as any;
     
-    const dbConnection = {
+    const dbConnection: any = {
       type: proj.type,
       config: proj.type === 'mysql' ? proj.dbConfig : { csvPath: proj.csvPath }
     };
+
+    if (proj.type === 'csv' && proj.csvPath) {
+       try {
+         const fileContent = fs.readFileSync(proj.csvPath, 'utf8');
+         dbConnection.config.csvContent = fileContent;
+       } catch (err) {
+         console.error("Error reading CSV file for query:", err);
+       }
+    }
 
     const aiResponse = await axios.post(`${AI_SERVICE_URL}/query`, { 
       question,

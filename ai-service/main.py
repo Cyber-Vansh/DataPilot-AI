@@ -68,9 +68,15 @@ async def process_query(request: QueryRequest):
             db = SQLDatabase(engine)
         
         elif request.db_connection.type == 'csv':
-            csv_path = request.db_connection.config.get('csvPath') 
-            filename = os.path.basename(csv_path)
-            full_path = f"/app/uploads/{filename}"
+            if 'csvContent' in request.db_connection.config:
+                import io
+                csv_content = request.db_connection.config['csvContent']
+                df = pd.read_csv(io.StringIO(csv_content))
+            else:
+                csv_path = request.db_connection.config.get('csvPath') 
+                filename = os.path.basename(csv_path)
+                full_path = f"/app/uploads/{filename}"
+                df = pd.read_csv(full_path)
             
             engine = create_engine(
                 "sqlite://", 
@@ -78,7 +84,6 @@ async def process_query(request: QueryRequest):
                 connect_args={"check_same_thread": False}
             )
             
-            df = pd.read_csv(full_path)
             df.to_sql("data", engine, index=False, if_exists='replace')
             
             db = SQLDatabase(engine)
@@ -170,16 +175,23 @@ async def get_schema(request: SchemaRequest):
             engine = create_engine(db_uri)
 
         elif request.db_connection.type == 'csv':
-            csv_path = request.db_connection.config.get('csvPath')
-            filename = os.path.basename(csv_path)
-            full_path = f"/app/uploads/{filename}"
+            import io
             
             engine = create_engine(
                 "sqlite://", 
                 poolclass=StaticPool,
                 connect_args={"check_same_thread": False}
             )
-            df = pd.read_csv(full_path)
+
+            if 'csvContent' in request.db_connection.config:
+                csv_content = request.db_connection.config['csvContent']
+                df = pd.read_csv(io.StringIO(csv_content))
+            else:
+                csv_path = request.db_connection.config.get('csvPath')
+                filename = os.path.basename(csv_path)
+                full_path = f"/app/uploads/{filename}"
+                df = pd.read_csv(full_path)
+
             df.to_sql("data", engine, index=False, if_exists='replace')
         
         else:
