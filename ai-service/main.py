@@ -109,6 +109,7 @@ async def process_query(request: QueryRequest):
             - Never query for all columns from a specific table, only ask for a few relevant columns given the question.
             - Pay attention to use only the column names you can see in the tables below. Be careful to not query for columns that do not exist.
             - Also, pay attention to which column is in which table.
+            - CRITICAL: Generate a SINGLE SQL query. Do NOT generate multiple queries separated by semicolons.
             """
         else:
             system_prompt = f"""You are a SQLite expert. Given an input question, create a syntactically correct SQLite query to run.
@@ -120,6 +121,7 @@ async def process_query(request: QueryRequest):
             - Never query for all columns from a specific table, only ask for a few relevant columns given the question.
             - Pay attention to use only the column names you can see in the tables below. Be careful to not query for columns that do not exist.
             - Also, pay attention to which column is in which table.
+            - CRITICAL: Generate a SINGLE SQL query. Do NOT generate multiple queries separated by semicolons.
             """
         
         prompt = PromptTemplate.from_template(system_prompt + "\n\nOnly use the following tables:\n{table_info}\n\nQuestion: {input}\n\nLimit: {top_k}")
