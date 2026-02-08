@@ -97,18 +97,30 @@ async def process_query(request: QueryRequest):
         from langchain_core.prompts import PromptTemplate
 
         db_name = request.db_connection.config.get('database', 'data') if request.db_connection.type == 'mysql' else 'data'
+        db_type = request.db_connection.type
 
-        system_prompt = f"""You are a MySQL expert. Given an input question, create a syntactically correct MySQL query to run.
-        Unless the user specifies otherwise, obtain the relevant data from the database.
-        
-        Important:
-        - If the user asks for "all table names", you MUST query the `information_schema.tables` table.
-        - Do NOT just list the tables from your context. Write a query to fetch them from the database.
-        - Example: SELECT table_name FROM information_schema.tables WHERE table_schema = '{db_name}';
-        - Never query for all columns from a specific table, only ask for a few relevant columns given the question.
-        - Pay attention to use only the column names you can see in the tables below. Be careful to not query for columns that do not exist.
-        - Also, pay attention to which column is in which table.
-        """
+        if db_type == 'mysql':
+            system_prompt = f"""You are a MySQL expert. Given an input question, create a syntactically correct MySQL query to run.
+            Unless the user specifies otherwise, obtain the relevant data from the database.
+            
+            Important:
+            - If the user asks for "all table names", you MUST query the `information_schema.tables` table.
+            - Example: SELECT table_name FROM information_schema.tables WHERE table_schema = '{db_name}';
+            - Never query for all columns from a specific table, only ask for a few relevant columns given the question.
+            - Pay attention to use only the column names you can see in the tables below. Be careful to not query for columns that do not exist.
+            - Also, pay attention to which column is in which table.
+            """
+        else: # csv / sqlite
+            system_prompt = f"""You are a SQLite expert. Given an input question, create a syntactically correct SQLite query to run.
+            Unless the user specifies otherwise, obtain the relevant data from the database.
+            
+            Important:
+            - If the user asks for "all table names", you MUST query the `sqlite_master` table.
+            - Example: SELECT name FROM sqlite_master WHERE type='table';
+            - Never query for all columns from a specific table, only ask for a few relevant columns given the question.
+            - Pay attention to use only the column names you can see in the tables below. Be careful to not query for columns that do not exist.
+            - Also, pay attention to which column is in which table.
+            """
         
         prompt = PromptTemplate.from_template(system_prompt + "\n\nOnly use the following tables:\n{table_info}\n\nQuestion: {input}\n\nLimit: {top_k}")
         
