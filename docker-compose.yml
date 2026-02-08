@@ -18,7 +18,6 @@ services:
       - "${AI_SERVICE_PORT}:${AI_SERVICE_PORT}"
     volumes:
       - ./ai-service:/app
-      - ./backend/uploads:/app/uploads
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     networks:
@@ -35,8 +34,8 @@ services:
       - ./backend/uploads:/app/uploads
     environment:
       - PORT=${BACKEND_PORT}
-      - MONGO_URI=mongodb://mongo:27017/${MONGO_DB_NAME}
-      - AI_SERVICE_URL=http://ai-service:${AI_SERVICE_PORT}
+      - MONGO_URI=${MONGO_URI}
+      - AI_SERVICE_URL=${AI_SERVICE_URL}
       - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - mongo
@@ -52,7 +51,7 @@ services:
     ports:
       - "${FRONTEND_PORT}:${FRONTEND_PORT}"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:${BACKEND_PORT}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     depends_on:
       - backend
     networks:

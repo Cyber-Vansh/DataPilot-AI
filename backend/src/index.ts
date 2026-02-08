@@ -51,7 +51,28 @@ app.use(cors());
 app.use(express.json());
 
 mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB'))
+  .then(async () => {
+    console.log('Connected to MongoDB');
+    
+    try {
+      console.log('Starting project cleanup...');
+      const projects = await Project.find({ type: 'csv' });
+      let deletedCount = 0;
+      
+      for (const project of projects) {
+        const proj = project as any;
+        if (proj.csvPath && !fs.existsSync(proj.csvPath)) {
+          console.log(`Deleting invalid project: ${proj.name} (File missing: ${proj.csvPath})`);
+          await ChatSession.deleteMany({ projectId: proj._id });
+          await Project.deleteOne({ _id: proj._id });
+          deletedCount++;
+        }
+      }
+      console.log(`Project cleanup complete. Removed ${deletedCount} invalid projects.`);
+    } catch (err) {
+      console.error('Error during project cleanup:', err);
+    }
+  })
   .catch(err => console.error('MongoDB connection error:', err));
 
 app.get('/api/health', (req: Request, res: Response) => {
