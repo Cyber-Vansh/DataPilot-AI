@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import {
   BarChart,
   Bar,
@@ -19,20 +19,25 @@ import {
 import { BarChart3, LineChart as LineChartIcon, PieChart as PieChartIcon, Maximize2, Minimize2 } from 'lucide-react';
 
 interface ChartRendererProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: any[];
+  data: unknown[];
 }
 
 const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#3b82f6', '#06b6d4'];
 
 export default function ChartRenderer({ data }: ChartRendererProps) {
-  const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
+  const [manualChartType, setManualChartType] = useState<'bar' | 'line' | 'pie' | null>(null);
+  const [prevData, setPrevData] = useState(data);
   const [isExpanded, setIsExpanded] = useState(false);
+
+  if (data !== prevData) {
+    setPrevData(data);
+    setManualChartType(null);
+  }
 
   const analysis = useMemo(() => {
     if (!data || !Array.isArray(data) || data.length === 0) return null;
 
-    const firstItem = data[0];
+    const firstItem = data[0] as Record<string, unknown>;
     const keys = Object.keys(firstItem);
 
     const labelKey = keys.find(key => typeof firstItem[key] === 'string') || keys[0];
@@ -53,16 +58,10 @@ export default function ChartRenderer({ data }: ChartRendererProps) {
     return { labelKey, valueKeys, suggestedType };
   }, [data]);
 
-  useEffect(() => {
-    if (analysis) {
-       // eslint-disable-next-line
-       setChartType(analysis.suggestedType);
-    }
-  }, [analysis]);
-
   if (!analysis) return null;
 
-  const { labelKey, valueKeys } = analysis;
+  const { labelKey, valueKeys, suggestedType } = analysis;
+  const chartType = manualChartType || suggestedType;
 
   const renderChart = () => {
     switch (chartType) {
@@ -156,21 +155,21 @@ export default function ChartRenderer({ data }: ChartRendererProps) {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2 bg-zinc-800/50 rounded-lg p-1">
           <button 
-            onClick={() => setChartType('bar')}
+            onClick={() => setManualChartType('bar')}
             className={`p-1.5 rounded-md transition-all ${chartType === 'bar' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50'}`}
             title="Bar Chart"
           >
             <BarChart3 className="w-4 h-4" />
           </button>
           <button 
-             onClick={() => setChartType('line')}
+             onClick={() => setManualChartType('line')}
              className={`p-1.5 rounded-md transition-all ${chartType === 'line' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50'}`}
              title="Line Chart"
           >
             <LineChartIcon className="w-4 h-4" />
           </button>
           <button 
-             onClick={() => setChartType('pie')}
+             onClick={() => setManualChartType('pie')}
              disabled={valueKeys.length > 1}
              className={`p-1.5 rounded-md transition-all ${chartType === 'pie' ? 'bg-indigo-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50'} ${valueKeys.length > 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
              title="Pie Chart"

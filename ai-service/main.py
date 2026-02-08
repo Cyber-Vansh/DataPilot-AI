@@ -142,3 +142,82 @@ async def process_query(request: QueryRequest):
     except Exception as e:
         print(f"Error processing query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+class SchemaRequest(BaseModel):
+    db_connection: DBConnection
+
+@app.post("/schema")
+async def get_schema(request: SchemaRequest):
+    try:
+        engine = None
+        
+        if request.db_connection.type == 'mysql':
+            from urllib.parse import quote_plus
+            config = request.db_connection.config
+            host = config.get('host', 'localhost')
+            port = int(config.get('port', 3306))
+            user = config.get('user', '')
+            password = config.get('password', '')
+            database = config.get('database', '')
+            
+            if ':' in host:
+                host = host.split(':')[0]
+            if host in ['localhost', '127.0.0.1']:
+                 host = 'host.docker.internal'
+
+            encoded_password = quote_plus(password)
+            db_uri = f"mysql+pymysql://{user}:{encoded_password}@{host}:{port}/{database}"
+            engine = create_engine(db_uri)
+
+        elif request.db_connection.type == 'csv':
+            csv_path = request.db_connection.config.get('csvPath')
+            filename = os.path.basename(csv_path)
+            full_path = f"/app/uploads/{filename}"
+            
+            engine = create_engine(
+                "sqlite://", 
+                poolclass=StaticPool,
+                connect_args={"check_same_thread": False}
+            )
+            df = pd.read_csv(full_path)
+            df.to_sql("data", engine, index=False, if_exists='replace')
+        
+        else:
+            raise HTTPException(status_code=400, detail="Invalid database type")
+
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        table_names = inspector.get_table_names()
+        
+        tables = []
+        relationships = []
+        
+        for table_name in table_names:
+            columns = []
+            for col in inspector.get_columns(table_name):
+                columns.append({
+                    "name": col['name'],
+                    "type": str(col['type'])
+                })
+            tables.append({
+                "name": table_name,
+                "columns": columns
+            })
+            
+            try:
+                fks = inspector.get_foreign_keys(table_name)
+                for fk in fks:
+                    relationships.append({
+                        "from": table_name,
+                        "to": fk['referred_table'],
+                        "cols": fk['constrained_columns'],
+                        "refCols": fk['referred_columns']
+                    })
+            except Exception as e:
+                print(f"Error fetching foreign keys for {table_name}: {e}")
+            
+        return {"tables": tables, "relationships": relationships}
+
+    except Exception as e:
+        print(f"Error fetching schema: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

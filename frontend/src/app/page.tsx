@@ -4,12 +4,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Send, Database, Table as TableIcon, Code, 
   Loader2, Terminal, Sparkles, ChevronRight, History, LogOut, Plus,
-  Pencil, Trash2
+  Pencil, Trash2, Eye
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import ProjectModal from '@/components/ProjectModal';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import ChartRenderer from '@/components/ChartRenderer';
+import SchemaViewer from '@/components/SchemaViewer';
 
 interface ChatMessage {
   id: string;
@@ -63,6 +64,9 @@ export default function Home() {
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
+
+  const [isSchemaModalOpen, setIsSchemaModalOpen] = useState(false);
+  const [schemaProjectId, setSchemaProjectId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -248,6 +252,11 @@ export default function Home() {
     setIsDeleteModalOpen(true);
   };
 
+  const handleViewSchema = (projectId: string) => {
+    setSchemaProjectId(projectId);
+    setIsSchemaModalOpen(true);
+  };
+
   const confirmDeleteProject = async () => {
     if (!projectToDelete) return;
 
@@ -290,6 +299,12 @@ export default function Home() {
         onProjectSaved={handleProjectSaved}
         token={token}
         projectToEdit={projectToEdit}
+      />
+      <SchemaViewer
+        isOpen={isSchemaModalOpen}
+        onClose={() => { setIsSchemaModalOpen(false); setSchemaProjectId(null); }}
+        projectId={schemaProjectId}
+        token={token}
       />
       
       <aside className="w-[280px] bg-zinc-900/50 border-r border-zinc-800 hidden md:flex flex-col backdrop-blur-xl">
@@ -335,6 +350,13 @@ export default function Home() {
                     <span className="truncate">{p.name}</span>
                   </button>
                   <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleViewSchema(p._id); }}
+                      className="p-1.5 text-zinc-500 hover:text-indigo-400 hover:bg-zinc-700/50 rounded-md"
+                      title="View Schema"
+                    >
+                      <Eye className="w-3 h-3" />
+                    </button>
                     <button 
                       onClick={(e) => { e.stopPropagation(); handleEditProject(p); }}
                       className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 rounded-md"

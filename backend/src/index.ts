@@ -177,6 +177,28 @@ app.post('/api/projects/upload', authMiddleware, upload.single('file'), async (r
   }
 });
 
+app.get('/api/projects/:id/schema', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const project = await Project.findOne({ _id: req.params.id, userId: req.user.id });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const proj = project as any;
+    const dbConnection = {
+      type: proj.type,
+      config: proj.type === 'mysql' ? proj.dbConfig : { csvPath: proj.csvPath }
+    };
+
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/schema`, { 
+      db_connection: dbConnection
+    });
+
+    res.json(aiResponse.data);
+  } catch (error) {
+    console.error("Schema fetch error:", error);
+    res.status(500).json({ error: 'Failed to fetch schema' });
+  }
+});
+
 app.get('/api/history', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const sessions = await ChatSession.find({ userId: req.user.id })
