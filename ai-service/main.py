@@ -27,6 +27,7 @@ class QueryRequest(BaseModel):
 
 @app.get("/")
 def home():
+    print(f"[{datetime.datetime.now()}] Health check received")
     return {"status": "ok"}
 
 def serialize_value(value):

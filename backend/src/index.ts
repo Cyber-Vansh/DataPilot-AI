@@ -76,14 +76,17 @@ mongoose.connect(MONGO_URI)
   .catch(err => console.error('MongoDB connection error:', err));
 
 app.get('/api/health', async (req: Request, res: Response) => {
+  console.log(`[Health Check] Checking AI Service at ${AI_SERVICE_URL}...`);
   try {
     const aiHealth = await axios.get(`${AI_SERVICE_URL}/`, { timeout: 2000 });
+    console.log(`[Health Check] AI Service responded: ${aiHealth.status}`);
     res.json({ 
       status: 'ok', 
       service: 'backend', 
       aiService: aiHealth.status === 200 ? 'ok' : 'error' 
     });
   } catch (error) {
+    console.error(`[Health Check] AI Service failed:`, error instanceof Error ? error.message : error);
     res.json({ 
       status: 'ok', 
       service: 'backend', 
