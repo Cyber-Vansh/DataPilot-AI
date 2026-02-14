@@ -1,363 +1,143 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
-  Send, Database, Table as TableIcon, Code, 
+  Send, Database, Code, 
   Loader2, Terminal, Sparkles, ChevronRight, History, LogOut, Plus,
-  Pencil, Trash2, Eye, Star
+  Pencil, Trash2, Eye, Star, Table as TableIcon
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import ProjectModal from '@/components/ProjectModal';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import ChartRenderer from '@/components/ChartRenderer';
 import SchemaViewer from '@/components/SchemaViewer';
-
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'ai';
-  content: string;
-  sql?: string;
-  data?: (Record<string, unknown> | unknown[])[];
-}
-
-interface HistoryItem {
-  _id: string;
-  title: string;
-  createdAt: string;
-  isFavorite?: boolean;
-  projectId?: {
-    _id: string;
-    name: string;
-    type: 'mysql' | 'csv';
-  };
-}
-
-interface Project {
-  _id: string;
-  name: string;
-  type: 'mysql' | 'csv';
-  dbConfig?: {
-    host: string;
-    user: string;
-    database: string;
-  };
-}
-
-interface BackendMessage {
-  role: 'user' | 'ai';
-  content: string;
-  sql?: string;
-  result?: unknown;
-}
+import { useProjects, Project } from '@/hooks/useProjects';
+import { useHistory, HistoryItem } from '@/hooks/useHistory';
+import { useChat } from '@/hooks/useChat';
+import { useSuggestions } from '@/hooks/useSuggestions';
 
 export default function Home() {
   const { user, token, logout } = useAuth();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const { 
+    projects, 
+    fetchProjects, 
+    deleteProject 
+  } = useProjects();
   
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const { 
+    history, 
+    fetchHistory, 
+    toggleFavorite, 
+    deleteHistoryItem 
+  } = useHistory();
+
+  const { 
+    messages, 
+    loading: chatLoading, 
+    sessionId, 
+    sendMessage, 
+    loadSession, 
+    clearChat 
+  } = useChat();
+
+  const { 
+    suggestions, 
+    loading: suggestionsLoading, 
+    fetchSuggestions, 
+    clearSuggestions 
+  } = useSuggestions();
+
+  const [input, setInput] = useState('');
+   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
-
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
-
   const [isChatDeleteModalOpen, setIsChatDeleteModalOpen] = useState(false);
   const [chatToDelete, setChatToDelete] = useState<string | null>(null);
-
   const [isSchemaModalOpen, setIsSchemaModalOpen] = useState(false);
   const [schemaProjectId, setSchemaProjectId] = useState<string | null>(null);
-
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedProject = projects.find(p => p._id === selectedProjectId);
-  
-  const parseResult = (raw: unknown) => {
-    if (typeof raw !== 'string') return raw;
-    try {
-      let cleaned = raw;
-      cleaned = cleaned.replace(/Decimal\('([^']*)'\)/g, '$1');
-      cleaned = cleaned.replace(/datetime\.datetime\(([^)]*)\)/g, (match: string, args: string) => {
-        const parts = args.split(',').map(p => p.trim());
-        return `"${parts.join('-')}"`; 
-      });
-      cleaned = cleaned.replace(/None/g, 'null');
-      cleaned = cleaned.replace(/'/g, '"');
-      cleaned = cleaned.replace(/\(/g, '[').replace(/\)/g, ']');
-      cleaned = cleaned.replace(/,\s*]/g, ']');
-      return JSON.parse(cleaned);
-    } catch (error) {
-      console.error("Failed to parse SQL result:", raw, error);
-      return [];
-    }
-  };
 
-  const fetchProjects = useCallback(async () => {
-    if (!token) return;
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const res = await fetch(`${apiUrl}/api/projects`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.status === 401) return logout();
-      if (!res.ok) {
-        throw new Error(`Failed to fetch projects: ${res.status} ${res.statusText}`);
-      }
-      const data = await res.json();
-      
-      if (Array.isArray(data)) {
-        setProjects(data);
-        if (data.length > 0 && !selectedProjectId) {
-          setSelectedProjectId(data[0]._id);
-        }
-      } else {
-        console.error("Failed to fetch projects, received non-array:", data);
-        setProjects([]);
-      }
-    } catch (err) {
-      console.error("Failed to fetch projects:", err);
-    }
-  }, [token, logout, selectedProjectId]);
-
-  const fetchHistory = useCallback(async () => {
-    if (!token) return;
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const res = await fetch(`${apiUrl}/api/history`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (res.status === 401) return logout();
-      
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setHistory(data);
-      } else {
-        setHistory([]);
-      }
-    } catch (err) {
-      console.error("Failed to fetch history:", err);
-    }
-  }, [token, logout]);
-
-  const fetchSuggestions = useCallback(async (projectId: string) => {
-    if (!token) return;
-    setSuggestionsLoading(true);
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const res = await fetch(`${apiUrl}/api/projects/${projectId}/suggestions`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.questions && Array.isArray(data.questions)) {
-          setSuggestions(data.questions);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to fetch suggestions:", err);
-    } finally {
-      setSuggestionsLoading(false);
-    }
-  }, [token]);
+  useEffect(() => {
+    fetchProjects();
+    fetchHistory();
+  }, [fetchProjects, fetchHistory]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  }, [messages, chatLoading]);
 
   useEffect(() => {
-    fetchHistory();
-    fetchProjects();
-  }, [token, fetchHistory, fetchProjects]);
+    if (selectedProjectId) {
+      fetchSuggestions(selectedProjectId);
+    } else {
+      clearSuggestions();
+    }
+  }, [selectedProjectId, fetchSuggestions, clearSuggestions]);
 
   useEffect(() => {
     if (messages.length > 0) fetchHistory();
   }, [messages.length, fetchHistory]);
 
   useEffect(() => {
-    if (selectedProjectId) {
-      fetchSuggestions(selectedProjectId);
-    } else {
-      setSuggestions([]);
+    if (projects.length > 0 && !selectedProjectId && !sessionId) {
+      const timer = setTimeout(() => {
+        setSelectedProjectId(projects[0]._id);
+      }, 0);
+      return () => clearTimeout(timer);
     }
-  }, [selectedProjectId, fetchSuggestions]);
+  }, [projects, selectedProjectId, sessionId]);
 
-  const sendMessage = async () => {
-    if (!input.trim() || loading || !selectedProjectId) return;
-    
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: input };
-    setMessages(prev => [...prev, userMsg]);
+  const handleSendMessage = async () => {
+    if (!input.trim() || chatLoading || !selectedProjectId) return;
+    const currentInput = input;
     setInput('');
-    setLoading(true);
-
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const res = await fetch(`${apiUrl}/api/chat`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
-          question: userMsg.content, 
-          sessionId,
-          projectId: selectedProjectId
-        })
-      });
-      
-      if (res.status === 401) return logout();
-
-      const data = await res.json();
-      
-      if (data.sessionId) {
-        setSessionId(data.sessionId);
-      }
-
-      const aiMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'ai',
-        content: data.sql ? "Query executed successfully." : "I couldn't generate a query for that.",
-        sql: data.sql,
-        data: parseResult(data.result)
-      };
-      setMessages(prev => [...prev, aiMsg]);
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: "Failed to connect to backend." }]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadHistoryItem = async (session: HistoryItem) => {
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const res = await fetch(`${apiUrl}/api/history/${session._id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.status === 401) return logout();
-      const data = await res.json();
-      
-      if (data.messages) {
-         setSessionId(data._id);
-
-         if (session.projectId) {
-            setSelectedProjectId(session.projectId._id);
-         }
-         
-         const loadedMessages = data.messages.map((msg: BackendMessage, index: number) => ({
-           id: index.toString(),
-           role: msg.role,
-           content: msg.content,
-           sql: msg.sql,
-           data: parseResult(msg.result)
-         }));
-         setMessages(loadedMessages);
-      }
-    } catch (err) {
-      console.error("Failed to load session:", err);
-    }
+    await sendMessage(currentInput, selectedProjectId);
   };
 
   const startNewQuery = () => {
-    setMessages([]);
+    clearChat();
     setInput('');
-    setSessionId(null);
+    if (selectedProjectId) fetchSuggestions(selectedProjectId);
+  };
+
+  const handleLoadHistory = async (item: HistoryItem) => {
+    const projectId = await loadSession(item._id);
+    if (projectId) setSelectedProjectId(projectId);
+  };
+
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+    const success = await deleteProject(projectToDelete);
+    if (success) {
+      if (selectedProjectId === projectToDelete) {
+        setSelectedProjectId(null);
+        startNewQuery();
+      }
+    }
+    setIsDeleteModalOpen(false);
+    setProjectToDelete(null);
+  };
+
+  const confirmDeleteChat = async () => {
+    if (!chatToDelete) return;
+    const success = await deleteHistoryItem(chatToDelete);
+    if (success) {
+      if (sessionId === chatToDelete) startNewQuery();
+      fetchHistory();
+    }
+    setIsChatDeleteModalOpen(false);
+    setChatToDelete(null);
   };
 
   const handleProjectSaved = () => {
     fetchProjects();
     setProjectToEdit(null);
-  };
-
-  const handleEditProject = (project: Project) => {
-    setProjectToEdit(project);
-    setIsProjectModalOpen(true);
-  };
-
-  const handleDeleteProject = (projectId: string) => {
-    setProjectToDelete(projectId);
-    setIsDeleteModalOpen(true);
-  };
-
-  const handleViewSchema = (projectId: string) => {
-    setSchemaProjectId(projectId);
-    setIsSchemaModalOpen(true);
-  };
-
-  const confirmDeleteProject = async () => {
-    if (!projectToDelete) return;
-
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const res = await fetch(`${apiUrl}/api/projects/${projectToDelete}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (res.status === 401) return logout();
-      
-      if (res.ok) {
-        setProjects(prev => prev.filter(p => p._id !== projectToDelete));
-        if (selectedProjectId === projectToDelete) {
-          setSelectedProjectId(null);
-          startNewQuery();
-        }
-      }
-    } catch (err) {
-      console.error("Failed to delete project:", err);
-    } finally {
-        setIsDeleteModalOpen(false);
-        setProjectToDelete(null);
-    }
-  };
-
-  const confirmDeleteChat = async () => {
-    if (!chatToDelete) return;
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const res = await fetch(`${apiUrl}/api/history/${chatToDelete}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        if (sessionId === chatToDelete) startNewQuery();
-        fetchHistory();
-      }
-    } catch (err) {
-      console.error("Failed to delete session:", err);
-    } finally {
-      setIsChatDeleteModalOpen(false);
-      setChatToDelete(null);
-    }
-  };
-
-
-  const toggleFavorite = async (e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation();
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const res = await fetch(`${apiUrl}/api/history/${sessionId}/favorite`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) fetchHistory();
-    } catch (err) {
-      console.error("Failed to toggle favorite:", err);
-    }
-  };
-
-  const deleteSession = (e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation();
-    setChatToDelete(sessionId);
-    setIsChatDeleteModalOpen(true);
   };
 
   return (
@@ -411,7 +191,6 @@ export default function Home() {
             </div>
           )}
 
-
           <div className="mb-6">
             <div className="flex items-center justify-between text-xs text-zinc-500 font-bold uppercase tracking-wider mb-2">
               <span>Project</span>
@@ -434,21 +213,21 @@ export default function Home() {
                   </button>
                   <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
-                      onClick={(e) => { e.stopPropagation(); handleViewSchema(p._id); }}
+                      onClick={(e) => { e.stopPropagation(); setSchemaProjectId(p._id); setIsSchemaModalOpen(true); }}
                       className="p-1.5 text-zinc-500 hover:text-indigo-400 hover:bg-zinc-700/50 rounded-md"
                       title="View Schema"
                     >
                       <Eye className="w-3 h-3" />
                     </button>
                     <button 
-                      onClick={(e) => { e.stopPropagation(); handleEditProject(p); }}
+                      onClick={(e) => { e.stopPropagation(); setProjectToEdit(p); setIsProjectModalOpen(true); }}
                       className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 rounded-md"
                       title="Edit Project"
                     >
                       <Pencil className="w-3 h-3" />
                     </button>
                     <button 
-                      onClick={(e) => { e.stopPropagation(); handleDeleteProject(p._id); }}
+                      onClick={(e) => { e.stopPropagation(); setProjectToDelete(p._id); setIsDeleteModalOpen(true); }}
                       className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-md"
                       title="Delete Project"
                     >
@@ -486,19 +265,19 @@ export default function Home() {
               {history.map((item) => (
                 <div 
                   key={item._id}
-                  onClick={() => loadHistoryItem(item)}
+                  onClick={() => handleLoadHistory(item)}
                   className={`group w-full text-left px-3 py-2 rounded-lg text-sm transition-colors truncate flex items-center justify-between cursor-pointer ${sessionId === item._id ? 'bg-zinc-800 text-zinc-200' : 'hover:bg-zinc-800/50 text-zinc-400 hover:text-zinc-200'}`}
                 >
                   <span className="truncate flex-1">{item.title || "Untitled Chat"}</span>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                      <button
-                        onClick={(e) => toggleFavorite(e, item._id)}
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(item._id); }}
                         className={`p-1 rounded hover:bg-zinc-700 ${item.isFavorite ? 'text-amber-400' : 'text-zinc-500 hover:text-amber-400'}`}
                      >
                         <Star className={`w-3 h-3 ${item.isFavorite ? 'fill-current' : ''}`} />
                      </button>
                      <button
-                        onClick={(e) => deleteSession(e, item._id)}
+                        onClick={(e) => { e.stopPropagation(); setChatToDelete(item._id); setIsChatDeleteModalOpen(true); }}
                         className="p-1 rounded hover:bg-zinc-700 text-zinc-500 hover:text-red-400"
                      >
                         <Trash2 className="w-3 h-3" />
@@ -646,7 +425,7 @@ export default function Home() {
               </div>
             ))}
             
-            {loading && (
+            {chatLoading && (
                <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-zinc-900 border border-zinc-800 w-fit animate-pulse">
                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
                  <span className="text-sm text-zinc-400">Thinking...</span>
@@ -659,7 +438,7 @@ export default function Home() {
 
       <div className="p-6 relative z-20">
         <div className="max-w-3xl mx-auto">
-          <div className={`relative flex items-center bg-zinc-900 rounded-2xl border transition-all duration-200 shadow-2xl ${loading ? 'border-zinc-800 opacity-50' : 'border-zinc-800 hover:border-zinc-700 focus-within:border-indigo-500/50 focus-within:ring-2 focus-within:ring-indigo-500/20'}`}>
+          <div className={`relative flex items-center bg-zinc-900 rounded-2xl border transition-all duration-200 shadow-2xl ${chatLoading ? 'border-zinc-800 opacity-50' : 'border-zinc-800 hover:border-zinc-700 focus-within:border-indigo-500/50 focus-within:ring-2 focus-within:ring-indigo-500/20'}`}>
             <div className="pl-4">
                <Terminal className="w-5 h-5 text-zinc-500" />
             </div>
@@ -667,15 +446,15 @@ export default function Home() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-              disabled={loading || !selectedProjectId}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              disabled={chatLoading || !selectedProjectId}
               placeholder={selectedProjectId ? "Ask me anything regarding your database..." : "Select a project to start chatting"}
               className="flex-1 bg-transparent px-4 py-4 text-white placeholder-zinc-500 focus:outline-none text-[15px]"
             />
             <div className="pr-2">
               <button
-                onClick={sendMessage}
-                disabled={loading || !input.trim() || !selectedProjectId}
+                onClick={handleSendMessage}
+                disabled={chatLoading || !input.trim() || !selectedProjectId}
                 className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:bg-zinc-800 disabled:text-zinc-600 transition-all cursor-pointer shadow-lg shadow-indigo-900/20 disabled:shadow-none"
               >
                 <Send className="w-4 h-4" />

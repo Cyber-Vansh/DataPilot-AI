@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (storedToken && storedUser) {
 
-      // eslint-disable-next-line
+
       setToken(storedToken);
       setUser(JSON.parse(storedUser));
     } else {
